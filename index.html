@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskFlow</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#12151c; --panel2:#171b24; --line:#222735; --text:#e7eaf2; --muted:#8b93a7;
+    --accent:#7c8cff; --pending:#8b93a7; --running:#5eb0ff; --done:#4ade80; --failed:#ff6b6b; --blocked:#ffb454;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+  .logo{font-weight:700;letter-spacing:.3px;font-size:18px}
+  .logo span{color:var(--accent)}
+  form{flex:1;display:flex;gap:10px}
+  input[type=text]{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:10px;font-size:14px;outline:none}
+  input[type=text]:focus{border-color:var(--accent)}
+  button{background:var(--accent);color:#0b0d12;border:0;padding:10px 18px;border-radius:10px;font-weight:600;cursor:pointer;font-size:14px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .chips{display:flex;gap:8px;padding:10px 24px 0;flex-wrap:wrap}
+  .chip{font-size:12px;color:var(--muted);border:1px solid var(--line);padding:3px 10px;border-radius:99px;cursor:pointer}
+  .chip:hover{color:var(--text);border-color:var(--accent)}
+
+  .stats{display:flex;gap:12px;padding:16px 24px 8px;align-items:center;flex-wrap:wrap}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:8px 14px;min-width:96px}
+  .stat b{display:block;font-size:20px;line-height:1.2}
+  .stat small{color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-size:10px}
+  .runstate{margin-left:auto;font-size:12px;color:var(--muted)}
+  .bar{height:6px;background:var(--panel);margin:4px 24px 0;border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--done));transition:width .4s}
+
+  main{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:16px 24px 24px;height:calc(100vh - 190px);min-height:480px}
+  .board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;min-height:0}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-height:0}
+  .col h3{margin:0;padding:12px 14px;font-size:12px;text-transform:uppercase;letter-spacing:.7px;display:flex;justify-content:space-between;color:var(--muted);border-bottom:1px solid var(--line)}
+  .col h3 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px}
+  .cards{padding:10px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--c,var(--pending));border-radius:10px;padding:10px 12px;cursor:pointer}
+  .card:hover{border-color:var(--accent)}
+  .card .t{font-weight:600}
+  .card .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;color:var(--muted);font-size:11px}
+  .tag{border:1px solid var(--line);padding:0 6px;border-radius:99px}
+  .card .err{margin-top:6px;color:var(--failed);font-size:12px}
+  .card.blocked .err{color:var(--blocked)}
+  .card .res{margin-top:8px;color:var(--muted);font-size:12px;white-space:pre-wrap;max-height:0;overflow:hidden;transition:max-height .25s}
+  .card.open .res{max-height:260px;overflow:auto}
+  .running{animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(94,176,255,.0)}50%{box-shadow:0 0 0 4px rgba(94,176,255,.18)}}
+
+  aside{display:flex;flex-direction:column;gap:12px;min-height:0}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-height:0}
+  .box h3{margin:0;padding:12px 14px;font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);border-bottom:1px solid var(--line)}
+  #log{flex:1;overflow:auto;padding:10px 14px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  #log div{white-space:pre-wrap}
+  #log .warn{color:var(--blocked)} #log .error{color:var(--failed)} #log time{color:var(--muted);margin-right:8px}
+  #result{padding:12px 14px;overflow:auto;white-space:pre-wrap;font-size:13px;max-height:240px}
+  .empty{color:var(--muted);padding:20px;text-align:center;font-size:12px}
+  @media (max-width:1000px){main{grid-template-columns:1fr;height:auto}.board{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Task<span>Flow</span></div>
+  <form id="f">
+    <input id="goal" type="text" placeholder="Give the agents a goal, e.g. Plan a 2-day hackathon for 200 students" autocomplete="off" required>
+    <button id="go">Run</button>
+  </form>
+</header>
+<div class="chips" id="chips"></div>
+
+<div class="stats">
+  <div class="stat"><b id="s-total">0</b><small>subtasks</small></div>
+  <div class="stat"><b id="s-run" style="color:var(--running)">0</b><small>running</small></div>
+  <div class="stat"><b id="s-done" style="color:var(--done)">0</b><small>done</small></div>
+  <div class="stat"><b id="s-bad" style="color:var(--blocked)">0</b><small>blocked / failed</small></div>
+  <div class="stat"><b id="s-time">0s</b><small>elapsed</small></div>
+  <div class="runstate" id="runstate">idle</div>
+</div>
+<div class="bar"><i id="prog"></i></div>
+
+<main>
+  <section class="board">
+    <div class="col"><h3><span><span class="dot" style="background:var(--pending)"></span>Queue</span><span id="n-pending">0</span></h3><div class="cards" id="c-pending"></div></div>
+    <div class="col"><h3><span><span class="dot" style="background:var(--running)"></span>Running</span><span id="n-running">0</span></h3><div class="cards" id="c-running"></div></div>
+    <div class="col"><h3><span><span class="dot" style="background:var(--done)"></span>Done</span><span id="n-done">0</span></h3><div class="cards" id="c-done"></div></div>
+    <div class="col"><h3><span><span class="dot" style="background:var(--blocked)"></span>Blocked</span><span id="n-bad">0</span></h3><div class="cards" id="c-bad"></div></div>
+  </section>
+  <aside>
+    <div class="box" style="flex:1"><h3>Live log</h3><div id="log"><div class="empty">Logs appear here.</div></div></div>
+    <div class="box"><h3>Final result</h3><div id="result"><div class="empty">The aggregated answer shows up when the run finishes.</div></div></div>
+  </aside>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = {pending:'--pending', running:'--running', done:'--done', failed:'--failed', blocked:'--blocked'};
+const EXAMPLES = ["Plan a 2-day hackathon for 200 students", "Research and outline a blog post on vector databases", "Create a 4-week study plan for GATE preparation"];
+let tasks = {}, startedAt = null, timer = null, es = null, finished = false;
+
+EXAMPLES.forEach(e => { const c = document.createElement('span'); c.className='chip'; c.textContent=e; c.onclick=()=>{$('goal').value=e}; $('chips').appendChild(c); });
+
+$('f').onsubmit = async ev => {
+  ev.preventDefault();
+  const goal = $('goal').value.trim(); if(!goal) return;
+  reset(); $('go').disabled = true;
+  try {
+    const r = await fetch('/api/runs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({goal})});
+    if(!r.ok) throw new Error(await r.text());
+    const {id} = await r.json();
+    listen(id);
+  } catch(e){ log('error', 'Could not start run: '+e.message); $('go').disabled=false; }
+};
+
+function reset(){
+  tasks = {}; finished = false; startedAt = Date.now(); if(es) es.close();
+  $('log').innerHTML=''; $('result').innerHTML='<div class="empty">Working...</div>';
+  render(); clearInterval(timer); timer = setInterval(tick, 500); $('runstate').textContent='planning...';
+}
+function listen(id){
+  es = new EventSource(`/api/runs/${id}/events`);
+  es.onmessage = m => handle(JSON.parse(m.data));
+  es.onerror = () => { if(!finished) log('warn','Connection lost - reconnecting...'); };
+}
+function handle(ev){
+  if(ev.type==='plan_ready'){ ev.tasks.forEach(t=>tasks[t.id]=t); $('runstate').textContent='running'; }
+  else if(ev.type==='task_update'){ tasks[ev.task.id]=ev.task; }
+  else if(ev.type==='log'){ log(ev.level, ev.msg, ev.t); }
+  else if(ev.type==='run_finished'){
+    finished = true; es.close(); clearInterval(timer); tick(); $('go').disabled=false;
+    $('runstate').textContent = ev.status==='done' ? 'completed' : 'finished with problems';
+    $('result').textContent = ev.summary || ev.error || 'No result.';
+  }
+  render();
+}
+function log(level,msg,t){
+  const d=document.createElement('div'); d.className=level;
+  const ts=new Date((t||Date.now()/1000)*1000).toLocaleTimeString([], {hour12:false});
+  d.innerHTML=`<time>${ts}</time>`; d.append(msg);
+  $('log').appendChild(d); $('log').scrollTop=$('log').scrollHeight;
+}
+function tick(){ if(startedAt) $('s-time').textContent = Math.round((Date.now()-startedAt)/1000)+'s'; renderRunning(); }
+function renderRunning(){ document.querySelectorAll('[data-start]').forEach(el=>{ el.textContent = ((Date.now()/1000 - el.dataset.start)).toFixed(0)+'s'; }); }
+
+function card(t){
+  const el=document.createElement('div');
+  const bucket = t.status;
+  el.className=`card ${bucket} ${t.status==='running'?'running':''}`;
+  el.style.setProperty('--c', `var(${COLORS[t.status]})`);
+  const deps = t.deps.length ? `<span class="tag">after ${t.deps.join(', ')}</span>` : `<span class="tag">no deps</span>`;
+  const att = t.attempts>1 ? `<span class="tag">attempt ${t.attempts}</span>` : '';
+  const timing = t.status==='running' ? `<span class="tag">⏱ <span data-start="${t.started_at}">0s</span></span>`
+    : (t.finished_at && t.started_at) ? `<span class="tag">${(t.finished_at-t.started_at).toFixed(1)}s</span>` : '';
+  el.innerHTML = `<div class="t">${esc(t.title)}</div><div class="meta"><span class="tag">${t.id}</span>${deps}${att}${timing}</div>`
+    + (t.error && t.status!=='done' ? `<div class="err">${esc(t.error)}</div>` : '')
+    + (t.result ? `<div class="res">${esc(t.result)}</div>` : '');
+  el.onclick=()=>el.classList.toggle('open');
+  return el;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function render(){
+  const open = new Set([...document.querySelectorAll('.card.open .t')].map(e=>e.textContent));
+  const cols = {pending:[], running:[], done:[], bad:[]};
+  Object.values(tasks).forEach(t=>{ (t.status==='failed'||t.status==='blocked' ? cols.bad : cols[t.status]).push(t); });
+  for(const k in cols){
+    const box=$('c-'+k); box.innerHTML=''; $('n-'+k).textContent=cols[k].length;
+    cols[k].forEach(t=>{ const c=card(t); if(open.has(t.title)) c.classList.add('open'); box.appendChild(c); });
+  }
+  const all=Object.values(tasks), n=all.length, done=cols.done.length;
+  $('s-total').textContent=n; $('s-run').textContent=cols.running.length; $('s-done').textContent=done; $('s-bad').textContent=cols.bad.length;
+  $('prog').style.width = n ? ((done+cols.bad.length)/n*100)+'%' : '0';
+  renderRunning();
+}
+</script>
+</body>
+</html>
