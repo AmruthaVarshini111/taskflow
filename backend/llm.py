@@ -118,8 +118,7 @@ class GeminiLLM:
         if not key:
             raise RuntimeError("Set GEMINI_API_KEY (or run with LLM_PROVIDER=mock)")
         self.client = genai.Client(api_key=key)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
+        self.model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     async def _call(self, prompt: str, json_mode: bool = False) -> str:
         from google.genai import types
 
