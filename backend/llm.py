@@ -119,19 +119,47 @@ class GeminiLLM:
             raise RuntimeError("Set GEMINI_API_KEY (or run with LLM_PROVIDER=mock)")
         self.client = genai.Client(api_key=key)
         self.model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    
     async def _call(self, prompt: str, json_mode: bool = False) -> str:
         from google.genai import types
 
         cfg = types.GenerateContentConfig(
             response_mime_type="application/json" if json_mode else "text/plain"
         )
-        try:
-            resp = await self.client.aio.models.generate_content(
-                model=self.model, contents=prompt, config=cfg
-            )
-        except Exception as e:  # network / quota errors are worth retrying
-            raise TransientError(str(e)) from e
-        return (resp.text or "").strip()
+
+        for attempt in range(4):
+            try:
+                resp = await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=cfg
+                )
+                return (resp.text or "").strip()
+
+            except Exception as e:
+                message = str(e)
+                status = (
+                    getattr(e, "code", None)
+                    or getattr(e, "status_code", None)
+                )
+
+                retryable = (
+                    status in (429, 500, 502, 503, 504)
+                    or any(
+                        code in message.upper()
+                        for code in (
+                            "429", "500", "502", "503", "504",
+                            "UNAVAILABLE", "RESOURCE_EXHAUSTED"
+                        )
+                    )
+                )
+
+                if not retryable or attempt == 3:
+                    raise TransientError(message) from e
+
+                delay = 2 ** (attempt + 1)
+                await asyncio.sleep(delay)
+
 
     @traceable(name="gemini_plan")
     async def plan(self, goal: str) -> list[dict]:
